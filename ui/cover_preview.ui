@@ -3,7 +3,7 @@
  <class>MenuThemePreview</class>
  <widget class="QWidget" name="MenuThemePreview">
   <property name="windowModality">
-   <enum>Qt::WindowModal</enum>
+   <enum>Qt::ApplicationModal</enum>
   </property>
   <property name="geometry">
    <rect>
@@ -14,7 +14,7 @@
    </rect>
   </property>
   <property name="windowTitle">
-   <string>Menu Theme %1 - Eidolist</string>
+   <string>Cover - Eidolist</string>
   </property>
   <widget class="QWidget" name="verticalLayoutWidget">
    <property name="geometry">
