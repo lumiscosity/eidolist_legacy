@@ -1,0 +1,9 @@
+*.pyc
+__pycache__/
+.idea/
+
+temp_main/
+temp_patch/
+
+scrapbook.py
+workdir.txt
