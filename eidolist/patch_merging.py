@@ -1,5 +1,6 @@
 import filecmp
 import os
+import platform
 import shutil
 import subprocess
 from os.path import exists
@@ -60,7 +61,8 @@ class PatchMergingWindow(QWidget):
 
     def change_patchdir(self):
         MessageBox(
-            "Before proceeding, make sure that you have placed the changelog in the patch as **changelog.txt**.").exec()
+            "Before proceeding, make sure that you have placed the changelog in the patch as **changelog.txt**."
+        ).exec()
 
         new_patchdir = QFileDialog.getExistingDirectory(self, "Select the patch directory:", "/")
         if exists(new_patchdir):
@@ -183,9 +185,13 @@ class PatchMergingWindow(QWidget):
         self.progress.setValue(n)
 
     def convert_lcf_files(self, patch_files, workdir, patchdir, progress_callback):
+        if platform.system() == "Windows":
+            tool_call = f"{os.getcwd() + '/lcf2xml.exe'}"
+        else:
+            tool_call = "lcf2xml"
         for i in range(len(patch_files)):
             temp = '"' + patchdir + '/' + patch_files[i] + '"'
-            subprocess.run(f"{os.getcwd() + '/lcf2xml.exe'} {temp}")
+            subprocess.run(f"{tool_call} {temp}")
             shutil.move(os.getcwd() + '\\' + rreplace(patch_files[i], 'l', 'e', 1),
                         os.getcwd() + "/temp_patch/" + rreplace(patch_files[i], 'l', 'e', 1))
             progress_callback.emit(2 * i - 1)

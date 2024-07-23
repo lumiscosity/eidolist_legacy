@@ -1,1 +1,1 @@
-pip3 install PySide6 beautifulsoup4 diff-match-patch lxml
+pip3 install PySide6 beautifulsoup4 lxml
