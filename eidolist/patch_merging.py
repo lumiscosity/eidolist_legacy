@@ -48,16 +48,14 @@ class PatchMergingWindow(QWidget):
             self.close()
             return
 
-        # load the ui file
-        self.ui = loader.load("ui/patch_merging.ui", None)
-        self.progress = ProgressBox("Validating the changelog...", 100, self.ui)
+        self.progress = ProgressBox("Validating the changelog...", 100, self)
         self.progress.setWindowModality(Qt.WindowModality.ApplicationModal)
 
         # validate the changelog
         self.load_patch()
 
         # final touches
-        self.ui.setWindowIcon(QIcon("icon.ico"))
+        self.setWindowIcon(QIcon("icon.ico"))
 
     def change_patchdir(self):
         MessageBox(
@@ -66,7 +64,7 @@ class PatchMergingWindow(QWidget):
 
         new_patchdir = QFileDialog.getExistingDirectory(self, "Select the patch directory:", "/")
         if exists(new_patchdir):
-            if exists(new_patchdir + "/changelog.txt"):
+            if exists(os.path.join(new_patchdir, "changelog.txt")):
                 self.patchdir = new_patchdir
             else:
                 MessageBox("Failed to find **changelog.txt**.").exec()
@@ -80,7 +78,7 @@ class PatchMergingWindow(QWidget):
         # merging process starts here!
         # validate the patch changelog
         self.progress.show()
-        self.warning_log = parse_changelog(self.patchdir + "\\")
+        self.warning_log = parse_changelog(self.patchdir, "check")
 
         for root, dirs, files in os.walk(self.patchdir):
             for i in files:
@@ -89,6 +87,7 @@ class PatchMergingWindow(QWidget):
                         self.patch_files.append(i)
 
         # find every file and db entry changed so far in the main copy
+        # this is saved in self.main_copy_changed
         self.main_copy_changed = parse_changelog(self.workdir, "list")
 
         # convert the lcf files
@@ -123,39 +122,31 @@ class PatchMergingWindow(QWidget):
                 if j[-1] == "file":
                     logged_files.append(f"{i[0]}/{i[1]}")
 
+        # this worker returns a list of conflicting files
         worker = Worker(self.merge_patch_assets, patch_files, logged_files, self.workdir, self.patchdir)
         worker.signals.progress.connect(self.bump_progress)
         worker.signals.result.connect(self.after_merge_worker)
 
         self.threadpool.start(worker)
 
-    def after_merge_worker(self, out):
+    def after_merge_worker(self, conflicting_files):
         # ask about the conflicting files
-        for i in range(len(out)):
-            if out[i][-3:] in {"png" or "bmp"}:
-                dialog = loader.load("ui/file_merging.ui")
-                dialog.setWindowIcon(QIcon("icon.ico"))
+        for i in range(len(conflicting_files)):
+            dialog = loader.load("ui/file_merging.ui")
+            dialog.setWindowIcon(QIcon("icon.ico"))
 
-                dialog.mainCopyButton.clicked.connect(dialog.reject)
-                dialog.patchButton.clicked.connect(dialog.accept)
+            dialog.mainCopyButton.clicked.connect(dialog.reject)
+            dialog.patchButton.clicked.connect(dialog.accept)
 
-                dialog.label_2.setPixmap(QPixmap(self.workdir + "/" + out[i]))
-                dialog.label_3.setPixmap(QPixmap(self.patchdir + "/" + out[i]))
-                dialog.label.setText(dialog.label.text().replace("%1", out[i]))
+            dialog.label.setText(dialog.label.text().replace("%1", conflicting_files[i]))
 
-                if dialog.exec():
-                    self.merge_patch_version(self.workdir + "/" + out[i], self.patchdir + "/" + out[i])
-            else:
-                dialog = loader.load("ui/file_merging.ui")
-                dialog.setWindowIcon(QIcon("icon.ico"))
+            # if the files are images, display them
+            if conflicting_files[i][-3:] in ["png", "bmp"]:
+                dialog.label_2.setPixmap(QPixmap(self.workdir + "/" + conflicting_files[i]))
+                dialog.label_3.setPixmap(QPixmap(self.patchdir + "/" + conflicting_files[i]))
 
-                dialog.mainCopyButton.clicked.connect(dialog.reject)
-                dialog.patchButton.clicked.connect(dialog.accept)
-
-                dialog.label.setText(dialog.label.text().replace("%1", out[i]))
-
-                if dialog.exec():
-                    self.merge_patch_version(self.workdir + "/" + out[i], self.patchdir + "/" + out[i])
+            if dialog.exec():
+                self.merge_patch_version(self.workdir + "/" + conflicting_files[i], self.patchdir + "/" + conflicting_files[i])
 
         # ensure that all files mentioned in the LCFs exist
 
@@ -170,6 +161,9 @@ class PatchMergingWindow(QWidget):
 
         self.threadpool.start(worker)
 
+    def after_lcf_check_worker(self):
+        pass
+
     def after_all_workers(self):
         if self.warning_log:
             fwarnings = ""
@@ -178,8 +172,6 @@ class PatchMergingWindow(QWidget):
             WarningBox("Warning: mismatches in the patch were detected! Please correct them by placing the required "
                        "files in the main copy before continuing.",
                        fwarnings).exec()
-
-        self.ui.show()
 
     def bump_progress(self, n):
         self.progress.setValue(n)
@@ -191,15 +183,15 @@ class PatchMergingWindow(QWidget):
             tool_call = "lcf2xml"
         for i in range(len(patch_files)):
             temp = '"' + patchdir + '/' + patch_files[i] + '"'
-            subprocess.run(f"{tool_call} {temp}")
-            shutil.move(os.getcwd() + '\\' + rreplace(patch_files[i], 'l', 'e', 1),
-                        os.getcwd() + "/temp_patch/" + rreplace(patch_files[i], 'l', 'e', 1))
+            subprocess.run((tool_call, temp))
+            shutil.move(os.path.join(os.getcwd(), rreplace(patch_files[i], 'l', 'e', 1)),
+                        os.path.join(os.getcwd(), "temp_patch", rreplace(patch_files[i], 'l', 'e', 1)))
             progress_callback.emit(2 * i - 1)
 
             temp = '"' + workdir + '/' + patch_files[i] + '"'
             subprocess.run(f"{os.getcwd() + '/lcf2xml.exe'} {temp}")
-            shutil.move(os.getcwd() + '\\' + rreplace(patch_files[i], 'l', 'e', 1),
-                        os.getcwd() + "/temp_main/" + rreplace(patch_files[i], 'l', 'e', 1))
+            shutil.move(os.path.join(os.getcwd(), rreplace(patch_files[i], 'l', 'e', 1)),
+                        os.path.join(os.getcwd(), "temp_main", rreplace(patch_files[i], 'l', 'e', 1)))
             progress_callback.emit(2 * i)
         return patch_files
 
@@ -225,13 +217,16 @@ class PatchMergingWindow(QWidget):
             progress_callback.emit(i)
 
     def merge_patch_assets(self, asset_list, match_list, workdir, patchdir, progress_callback):
+        # this worker returns a list of merge conflicts
         out = []
         for i in range(len(asset_list)):
-            # if the file hasn't been modified yet or is new, auto-merge it
+            # if the file hasn't been modified yet, is included but is the same as the main copy version
+            # or is new, auto-merge it
             if asset_list[i][:-4] not in match_list or not exists(workdir + "/" + asset_list[i]):
                 pass  # TODO: stubbed for testing; unstub this when done!
                 # shutil.move(patchdir + "/" + asset_list[i], workdir + "/" + asset_list[i])
             elif not filecmp.cmp(patchdir + "/" + asset_list[i], workdir + "/" + asset_list[i], False):
+                # else, add it to the list
                 out.append(asset_list[i])
             progress_callback.emit(i)
         return out

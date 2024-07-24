@@ -18,12 +18,13 @@ class MainWindow(QWidget):
 
         # check the working directory
         if not workdir.check_workdir():
-            self.change_workdir(False)
+            self.change_workdir()
         if not workdir.check_workdir():
             exit(1)
 
         # load the ui file
         self.ui = loader.load("ui/main_window.ui", None)
+        self.ui_initialized = True
 
         # connect the buttons
         self.ui.workdirButton.clicked.connect(self.change_workdir)
@@ -54,7 +55,7 @@ class MainWindow(QWidget):
     def show(self):
         self.ui.show()
 
-    def change_workdir(self, ui_initialized=True):
+    def change_workdir(self):
         MessageBox(
             "Before proceeding, make sure that you have placed the changelog in the main copy as **changelog.txt**. "
             "If the file isn't found, an empty changelog will be made."
@@ -66,7 +67,9 @@ class MainWindow(QWidget):
                 with open(new_workdir + "/changelog.txt", 'w') as file:
                     file.write("|=|=|=|=|=|=|=|=|=|=|=|=|=|=|=|=|=|=|=|=|=|=|=|=|=|")
             workdir.set_workdir(new_workdir)
-            if ui_initialized:
+            if self.ui_initialized:
                 self.ui.workdirLabel.setText(f"The current working directory is **{new_workdir}**.")
         elif new_workdir != "":
             MessageBox("Failed to find the project folder.").exec()
+        else:
+            MessageBox("Not a directory!").exec()

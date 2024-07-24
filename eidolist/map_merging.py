@@ -2,12 +2,12 @@ import os
 import shutil
 import subprocess
 
-from PySide6.QtCore import QPoint, Qt
-from PySide6.QtGui import QIcon, QPixmap, QPainter
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QIcon, QPixmap
 from PySide6.QtUiTools import QUiLoader
 from PySide6.QtWidgets import QWidget, QStackedLayout, QLabel, QGraphicsOpacityEffect
 
-from eidolist.selector_grid import SelectorGrid, SelectorImage
+from eidolist.selector_grid import SelectorGrid
 
 loader = QUiLoader()
 

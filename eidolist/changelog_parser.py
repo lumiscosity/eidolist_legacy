@@ -2,8 +2,6 @@ import os
 from datetime import date
 from os.path import exists
 
-from bs4 import BeautifulSoup
-
 mt = {
     "Jan": 1,
     "Feb": 2,
@@ -59,7 +57,7 @@ ignore = [
 def parse_changelog(directory: str, parse_type: str = "check"):
     warning_log = []
 
-    with open(directory + "/changelog.txt") as file:
+    with open(os.path.join(directory + "/changelog.txt")) as file:
         changelog = file.read().splitlines()
 
     # Strip separators and start/end newlines
