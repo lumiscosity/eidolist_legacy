@@ -12,7 +12,6 @@ from PySide6.QtWidgets import QFileDialog, QWidget
 from bs4 import BeautifulSoup
 
 from eidolist.changelog_parser import parse_changelog, exists_untyped
-from eidolist.lcf_parser import db_entries_from_changelog
 from eidolist.message_box import MessageBox, ProgressBox, WarningBox
 from eidolist.workdir import get_workdir
 from eidolist.workers import Worker
@@ -31,6 +30,8 @@ class PatchMergingWindow(QWidget):
         super().__init__()
 
         # Clean up temp files, if any
+        self.patch_db_soup = None
+        self.main_db_soup = None
         self.clean_temp_files(os.getcwd() + "/temp_main")
         self.clean_temp_files(os.getcwd() + "/temp_patch")
 
@@ -56,6 +57,16 @@ class PatchMergingWindow(QWidget):
 
         # final touches
         self.setWindowIcon(QIcon("icon.ico"))
+
+    def ldb_merge(self, changelog_name, long_name=None):
+        if long_name is None:
+            long_name = changelog_name
+        for i in self.patch_changed[changelog_name]:
+            if i not in self.main_copy_changed[changelog_name]:
+                self.main_db_soup.LDB.Database.switches.find(long_name, id=i).replace_with(
+                    self.patch_db_soup.LDB.Database.switches.find(long_name, id=i))
+            else:
+                self.warning_log.append(f"{long_name} {i} has already been modified this build cycle - please merge it manually!")
 
     def change_patchdir(self):
         MessageBox(
@@ -86,9 +97,10 @@ class PatchMergingWindow(QWidget):
                     if i[-3:] in {"ldb", "lmu", "lmt"}:
                         self.patch_files.append(i)
 
-        # find every file and db entry changed so far in the main copy
-        # this is saved in self.main_copy_changed
+        # find every file and db entry changed so far in the main copy and patch
+        # this is saved in self.main_copy_changed and self.patch_changed respectively
         self.main_copy_changed = parse_changelog(self.workdir, "list")
+        self.patch_changed = parse_changelog(self.patchdir, "list")
 
         # convert the lcf files
         self.progress.setMaximum(len(self.patch_files) * 2 - 2)
@@ -101,6 +113,10 @@ class PatchMergingWindow(QWidget):
         self.threadpool.start(worker)
 
     def after_lcf_worker(self):
+        with open(os.getcwd() + "/temp_main/RPG_RT.edb", encoding="utf-8") as file:
+            self.main_db_soup = BeautifulSoup(file, "lxml-xml", from_encoding="utf-8")
+        with open(os.getcwd() + "/temp_patch/RPG_RT.edb", encoding="utf-8") as file:
+            self.patch_db_soup = BeautifulSoup(file, "lxml-xml", from_encoding="utf-8")
         # move new files to the patch;
         # if they already exist, and have been modified this patch, store them for later
         self.progress.setValue(0)
@@ -146,7 +162,8 @@ class PatchMergingWindow(QWidget):
                 dialog.label_3.setPixmap(QPixmap(self.patchdir + "/" + conflicting_files[i]))
 
             if dialog.exec():
-                self.merge_patch_version(self.workdir + "/" + conflicting_files[i], self.patchdir + "/" + conflicting_files[i])
+                self.merge_patch_version(self.workdir + "/" + conflicting_files[i],
+                                         self.patchdir + "/" + conflicting_files[i])
 
         # ensure that all files mentioned in the LCFs exist
 
@@ -155,14 +172,22 @@ class PatchMergingWindow(QWidget):
         self.progress.setMaximum(len(self.patch_files))
         self.progress.show()
 
-        worker = Worker(self.check_lcf_mentioned_files, self.patch_files, db_entries_from_changelog())
+        # this worker adds warning about missing files used in the new maps to the warning log
+        worker = Worker(self.check_lcf_mentioned_files, self.patch_changed)
         worker.signals.progress.connect(self.bump_progress)
-        worker.signals.result.connect(self.after_all_workers)
+        worker.signals.result.connect(self.after_lcf_check_worker)
 
         self.threadpool.start(worker)
 
     def after_lcf_check_worker(self):
-        pass
+        self.progress.setValue(0)
+        self.progress.setLabelText("Merging incoming LDB data...")
+        self.progress.setMaximum(len(self.patch_files))
+        self.progress.show()
+
+        worker = Worker(self.merge_patch_ldb)
+        worker.signals.progress.connect(self.bump_progress)
+        worker.signals.result.connect(self.after_all_workers)
 
     def after_all_workers(self):
         if self.warning_log:
@@ -182,7 +207,7 @@ class PatchMergingWindow(QWidget):
         else:
             tool_call = "lcf2xml"
         for i in range(len(patch_files)):
-            temp = '"' + patchdir + '/' + patch_files[i] + '"'
+            temp = patchdir + '/' + patch_files[i]
             subprocess.run((tool_call, temp))
             shutil.move(os.path.join(os.getcwd(), rreplace(patch_files[i], 'l', 'e', 1)),
                         os.path.join(os.getcwd(), "temp_patch", rreplace(patch_files[i], 'l', 'e', 1)))
@@ -195,15 +220,14 @@ class PatchMergingWindow(QWidget):
             progress_callback.emit(2 * i)
         return patch_files
 
-    def check_lcf_mentioned_files(self, patch_files, patch_db, progress_callback):
-        print(patch_db)
+    def check_lcf_mentioned_files(self, patch_files, progress_callback):
+        # TODO: Add checks for data used in events/CEs
         for i in os.listdir(f"{os.getcwd()}/temp_patch"):
             if i == "RPG_RT.edb":
-                with open(os.getcwd() + "/temp_patch/RPG_RT.edb", encoding="utf-8") as file:
-                    soup = BeautifulSoup(file, "lxml-xml", from_encoding="utf-8")
+                if "Animation" in patch_files.keys():
                     for j in patch_files["Animation"]:
                         # animations: file and sounds
-                        anim = soup.LDB.Database.animations.find("Animation", id=j[1])
+                        anim = self.patch_db_soup.LDB.Database.animations.find("Animation", id=j)
                         if not exists_untyped(f"{self.workdir}"
                                               f"{anim.animation_name}"):
                             self.warning_log.append(f"Animation file {anim.animation_name} used by animation "
@@ -215,6 +239,14 @@ class PatchMergingWindow(QWidget):
             else:  # lmu files
                 pass
             progress_callback.emit(i)
+
+    def merge_patch_ldb(self, progress_callback):
+        self.ldb_merge("V", "Variable")
+        self.ldb_merge("S", "Switch")
+        self.ldb_merge("Animation")
+        self.ldb_merge("Tileset")
+        self.ldb_merge("CE", "CommonEvent")
+
 
     def merge_patch_assets(self, asset_list, match_list, workdir, patchdir, progress_callback):
         # this worker returns a list of merge conflicts
@@ -242,3 +274,4 @@ class PatchMergingWindow(QWidget):
 
     def merge_patch_version(self, main_copy_file, patch_file):
         shutil.move(patch_file, main_copy_file)
+
