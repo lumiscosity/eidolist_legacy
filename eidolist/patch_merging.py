@@ -199,7 +199,6 @@ class PatchMergingWindow(QWidget):
         self.progress.setValue(n)
 
     def convert_lcf_files(self, patch_files, workdir, patchdir, progress_callback):
-        print(platform.system())
         if platform.system() == "Windows":
             tool_call = f"{os.getcwd() + '/lcf2xml.exe'}"
         else:
