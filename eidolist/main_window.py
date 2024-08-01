@@ -1,3 +1,4 @@
+import os
 from os.path import exists
 import random
 
@@ -16,15 +17,21 @@ class MainWindow(QWidget):
     def __init__(self):
         super().__init__()
 
+        # load the ui file
+        self.ui = loader.load("ui/main_window.ui", None)
+        self.ui_initialized = True
+
+        # generate the necessary folders
+        if not exists("temp_main"):
+            os.makedirs("temp_main")
+        if not exists("temp_patch"):
+            os.makedirs("temp_patch")
+
         # check the working directory
         if not workdir.check_workdir():
             self.change_workdir()
         if not workdir.check_workdir():
             exit(1)
-
-        # load the ui file
-        self.ui = loader.load("ui/main_window.ui", None)
-        self.ui_initialized = True
 
         # connect the buttons
         self.ui.workdirButton.clicked.connect(self.change_workdir)

@@ -61,12 +61,7 @@ class PatchMergingWindow(QWidget):
     def ldb_merge(self, changelog_name, long_name=None):
         if long_name is None:
             long_name = changelog_name
-        for i in self.patch_changed[changelog_name]:
-            if i not in self.main_copy_changed[changelog_name]:
-                self.main_db_soup.LDB.Database.switches.find(long_name, id=i).replace_with(
-                    self.patch_db_soup.LDB.Database.switches.find(long_name, id=i))
-            else:
-                self.warning_log.append(f"{long_name} {i} has already been modified this build cycle - please merge it manually!")
+
 
     def change_patchdir(self):
         MessageBox(
@@ -126,7 +121,7 @@ class PatchMergingWindow(QWidget):
         for root, dirs, files in os.walk(self.patchdir):
             for i in files:
                 if not os.path.basename(self.patchdir) == os.path.basename(root):
-                    if i[-3:] not in {"ldb", "lmu", "lmt"}:
+                    if i[-3:] not in {"ldb", "lmt"}:
                         patch_files.append(os.path.basename(root) + '/' + i)
         self.progress.setMaximum(len(patch_files) - 1)
 
@@ -182,12 +177,14 @@ class PatchMergingWindow(QWidget):
     def after_lcf_check_worker(self):
         self.progress.setValue(0)
         self.progress.setLabelText("Merging incoming LDB data...")
-        self.progress.setMaximum(len(self.patch_files))
+        self.progress.setMaximum(6)
         self.progress.show()
 
         worker = Worker(self.merge_patch_ldb)
         worker.signals.progress.connect(self.bump_progress)
         worker.signals.result.connect(self.after_all_workers)
+
+        self.threadpool.start(worker)
 
     def after_all_workers(self):
         if self.warning_log:
@@ -202,19 +199,20 @@ class PatchMergingWindow(QWidget):
         self.progress.setValue(n)
 
     def convert_lcf_files(self, patch_files, workdir, patchdir, progress_callback):
+        print(platform.system())
         if platform.system() == "Windows":
             tool_call = f"{os.getcwd() + '/lcf2xml.exe'}"
         else:
             tool_call = "lcf2xml"
         for i in range(len(patch_files)):
-            temp = patchdir + '/' + patch_files[i]
+            temp = os.path.join(patchdir, patch_files[i])
             subprocess.run((tool_call, temp))
             shutil.move(os.path.join(os.getcwd(), rreplace(patch_files[i], 'l', 'e', 1)),
                         os.path.join(os.getcwd(), "temp_patch", rreplace(patch_files[i], 'l', 'e', 1)))
             progress_callback.emit(2 * i - 1)
 
-            temp = '"' + workdir + '/' + patch_files[i] + '"'
-            subprocess.run(f"{os.getcwd() + '/lcf2xml.exe'} {temp}")
+            temp = os.path.join(workdir, patch_files[i])
+            subprocess.run((tool_call, temp))
             shutil.move(os.path.join(os.getcwd(), rreplace(patch_files[i], 'l', 'e', 1)),
                         os.path.join(os.getcwd(), "temp_main", rreplace(patch_files[i], 'l', 'e', 1)))
             progress_callback.emit(2 * i)
@@ -235,17 +233,88 @@ class PatchMergingWindow(QWidget):
                         for k in anim.find_all():
                             pass
             elif i == "RPG_RT.emt":
+                # check for panoramas here
                 pass
             else:  # lmu files
+                # check for event graphics and command/move route data here
                 pass
             progress_callback.emit(i)
 
     def merge_patch_ldb(self, progress_callback):
-        self.ldb_merge("V", "Variable")
-        self.ldb_merge("S", "Switch")
-        self.ldb_merge("Animation")
-        self.ldb_merge("Tileset")
-        self.ldb_merge("CE", "CommonEvent")
+        changelog_name = "V"
+        long_name = "Variable"
+        if changelog_name in self.patch_changed.keys():
+            for i in self.patch_changed[changelog_name]:
+                if i not in self.main_copy_changed[changelog_name]:
+                    self.main_db_soup.LDB.Database.variables.find(long_name, id=i).replace_with(
+                        self.patch_db_soup.LDB.Database.variables.find(long_name, id=i))
+                else:
+                    self.warning_log.append(
+                        f"{long_name} {i} has already been modified this build cycle - please merge it manually!"
+                    )
+        progress_callback.emit(1)
+        changelog_name = "S"
+        long_name = "Switch"
+        if changelog_name in self.patch_changed.keys():
+            for i in self.patch_changed[changelog_name]:
+                if i not in self.main_copy_changed[changelog_name]:
+                    self.main_db_soup.LDB.Database.switches.find(long_name, id=i).replace_with(
+                        self.patch_db_soup.LDB.Database.switches.find(long_name, id=i))
+                else:
+                    self.warning_log.append(
+                        f"{long_name} {i} has already been modified this build cycle - please merge it manually!"
+                    )
+        progress_callback.emit(2)
+        changelog_name = "Animation"
+        long_name = "Animation"
+        if changelog_name in self.patch_changed.keys():
+            for i in self.patch_changed[changelog_name]:
+                if i not in self.main_copy_changed[changelog_name]:
+                    self.main_db_soup.LDB.Database.animations.find(long_name, id=i).replace_with(
+                        self.patch_db_soup.LDB.Database.animations.find(long_name, id=i))
+                else:
+                    self.warning_log.append(
+                        f"{long_name} {i} has already been modified this build cycle - please merge it manually!"
+                    )
+        progress_callback.emit(3)
+        changelog_name = "Tileset"
+        long_name = "Chipset"
+        if changelog_name in self.patch_changed.keys():
+            for i in self.patch_changed[changelog_name]:
+                if i not in self.main_copy_changed[changelog_name]:
+                    self.main_db_soup.LDB.Database.chipsets.find(long_name, id=i).replace_with(
+                        self.patch_db_soup.LDB.Database.chipsets.find(long_name, id=i))
+                else:
+                    self.warning_log.append(
+                        f"{long_name} {i} has already been modified this build cycle - please merge it manually!"
+                    )
+        progress_callback.emit(4)
+        changelog_name = "CE"
+        long_name = "CommonEvent"
+        if changelog_name in self.patch_changed.keys():
+            for i in self.patch_changed[changelog_name]:
+                if i not in self.main_copy_changed[changelog_name]:
+                    self.main_db_soup.LDB.Database.commonevents.find(long_name, id=i).replace_with(
+                        self.patch_db_soup.LDB.Database.commonevents.find(long_name, id=i))
+                else:
+                    self.warning_log.append(
+                        f"{long_name} {i} has already been modified this build cycle - please merge it manually!"
+                    )
+        progress_callback.emit(5)
+        changelog_name = "Terrain"
+        long_name = "Terrain"
+        if changelog_name in self.patch_changed.keys():
+            for i in self.patch_changed[changelog_name]:
+                if i not in self.main_copy_changed[changelog_name]:
+                    self.main_db_soup.LDB.Database.terrains.find(long_name, id=i).replace_with(
+                        self.patch_db_soup.LDB.Database.terrains.find(long_name, id=i))
+                else:
+                    self.warning_log.append(
+                        f"{long_name} {i} has already been modified this build cycle - please merge it manually!"
+                    )
+        progress_callback.emit(6)
+        with open("temp_main/RPG_RT.edb", "w", encoding='utf-8') as file:
+            file.write(str(self.main_db_soup))
 
 
     def merge_patch_assets(self, asset_list, match_list, workdir, patchdir, progress_callback):
@@ -255,8 +324,7 @@ class PatchMergingWindow(QWidget):
             # if the file hasn't been modified yet, is included but is the same as the main copy version
             # or is new, auto-merge it
             if asset_list[i][:-4] not in match_list or not exists(workdir + "/" + asset_list[i]):
-                pass  # TODO: stubbed for testing; unstub this when done!
-                # shutil.move(patchdir + "/" + asset_list[i], workdir + "/" + asset_list[i])
+                shutil.move(patchdir + "/" + asset_list[i], workdir + "/" + asset_list[i])
             elif not filecmp.cmp(patchdir + "/" + asset_list[i], workdir + "/" + asset_list[i], False):
                 # else, add it to the list
                 out.append(asset_list[i])
